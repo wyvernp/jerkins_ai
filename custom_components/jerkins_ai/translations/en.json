@@ -1,0 +1,53 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Jerkins AI Integration",
+                "description": "Set up Jerkins AI integration for intelligent home automation.",
+                "data": {
+                    "name": "Name",
+                    "polling_interval": "Polling interval (seconds)"
+                }
+            },
+            "sensors": {
+                "title": "Select Sensors",
+                "description": "Select the sensors that Jerkins AI should monitor.",
+                "data": {
+                    "sensors": "Sensors"
+                }
+            },
+            "zones": {
+                "title": "Assign Zone",
+                "description": "Assign a zone to the sensor: {sensor}",
+                "data": {
+                    "zone": "Zone",
+                    "custom_zone": "Custom Zone Name"
+                }
+            },
+            "actions": {
+                "title": "Configure Actions",
+                "description": "Select the actions that can be performed in zone: {zone}",
+                "data": {
+                    "actions": "Available Actions",
+                    "custom_actions": "Custom Actions (comma-separated)"
+                }
+            },
+            "llm": {
+                "title": "LLM Configuration",
+                "description": "Configure the Large Language Model (LLM) settings.",
+                "data": {
+                    "url": "LLM API URL (e.g., http://localhost:11434/api/generate)"
+                }
+            }
+        },
+        "error": {
+            "no_sensors": "You must select at least one sensor",
+            "no_zone": "You must assign a zone",
+            "no_actions": "You must define at least one action",
+            "invalid_url": "Invalid URL format"
+        },
+        "abort": {
+            "already_configured": "Jerkins AI is already configured"
+        }
+    }
+}

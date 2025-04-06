@@ -1,0 +1,54 @@
+force_update:
+  description: Force Jerkins AI to update sensor data and communicate with the LLM immediately.
+  fields:
+    entry_id:
+      description: Config entry ID. Leave empty to update all entries.
+      example: "abcdef123456"
+      required: false
+      selector:
+        text:
+
+update_zone_mappings:
+  description: Update zone mappings for sensors.
+  fields:
+    entry_id:
+      description: Config entry ID.
+      example: "abcdef123456"
+      required: true
+      selector:
+        text:
+    sensor_id:
+      description: The entity ID of the sensor.
+      example: "sensor.living_room_temperature"
+      required: true
+      selector:
+        entity:
+          domain: sensor
+    zone_id:
+      description: The zone ID to assign to the sensor.
+      example: "zone.living_room or custom_zone_name"
+      required: true
+      selector:
+        text:
+
+update_action_mappings:
+  description: Update available actions for a zone.
+  fields:
+    entry_id:
+      description: Config entry ID.
+      example: "abcdef123456"
+      required: true
+      selector:
+        text:
+    zone_id:
+      description: The zone ID to update actions for.
+      example: "zone.living_room or custom_zone_name"
+      required: true
+      selector:
+        text:
+    actions:
+      description: Comma-separated list of available actions for the zone.
+      example: "light.turn_on,light.turn_off,custom_action"
+      required: true
+      selector:
+        text:
