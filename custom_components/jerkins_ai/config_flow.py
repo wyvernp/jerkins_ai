@@ -38,12 +38,13 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def get_sensor_entities(hass: HomeAssistant) -> List[dict]:
-    """Get all sensor entities."""
+    """Get all sensor and binary_sensor entities."""
     states = hass.states.async_all()
     sensor_options = []
     
     for state in states:
-        if state.domain == "sensor":
+        # Include both sensors and binary sensors
+        if state.domain == "sensor" or state.domain == "binary_sensor":
             sensor_options.append({
                 "value": state.entity_id,
                 "label": f"{state.name} ({state.entity_id})"

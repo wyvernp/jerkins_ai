@@ -252,12 +252,26 @@ class JerkinsAI:
                 # Dynamically check if these actions are still valid
                 valid_actions = await self._validate_zone_actions(zone_id, available_actions)
                 
+                # Format the state value appropriately for binary sensors vs regular sensors
+                state_value = state.state
+                sensor_type = "sensor"
+                
+                # Special handling for binary sensors
+                if sensor_entity_id.startswith("binary_sensor."):
+                    sensor_type = "binary_sensor"
+                    # Convert on/off, true/false to boolean for clearer understanding by LLM
+                    if state_value.lower() in ['on', 'true', 'yes', 'open', 'detected', 'home']:
+                        state_value = True
+                    else:
+                        state_value = False
+                
                 sensor_info = {
                     "entity_id": sensor_entity_id,
                     "name": state.name,
-                    "state": state.state,
+                    "state": state_value,
                     "attributes": state.attributes,
                     "zone": zone_id,
+                    "type": sensor_type,
                     "available_actions": valid_actions
                 }
                 

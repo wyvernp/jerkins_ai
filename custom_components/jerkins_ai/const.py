@@ -20,7 +20,7 @@ STEP_ACTIONS = "actions"
 STEP_LLM = "llm"
 
 # Service discovery
-SUPPORTED_DOMAINS = ["light", "switch", "climate", "cover", "media_player", "fan", "automation", "script"]
+SUPPORTED_DOMAINS = ["light", "switch", "climate", "cover", "media_player", "fan", "automation", "script", "binary_sensor"]
 SERVICE_CATEGORY_TOGGLE = ["light", "switch", "fan", "input_boolean"]
 SERVICE_CATEGORY_COVER = ["cover"]
 SERVICE_CATEGORY_CLIMATE = ["climate"]
