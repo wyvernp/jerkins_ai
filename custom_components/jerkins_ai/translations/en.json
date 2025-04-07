@@ -11,14 +11,14 @@
             },
             "sensors": {
                 "title": "Select Sensors",
-                "description": "Select the sensors that Jerkins AI should monitor. {note}",
+                "description": "Select the sensors that Jerkins AI should monitor.",
                 "data": {
                     "sensors": "Sensors"
                 }
             },
             "actions": {
                 "title": "Configure Actions",
-                "description": "Select the actions that can be performed in area: {area}",
+                "description": "Select the actions that can be performed for your sensors.",
                 "data": {
                     "actions": "Available Actions",
                     "custom_actions": "Custom Actions (comma-separated)"
@@ -34,13 +34,12 @@
         },
         "error": {
             "no_sensors": "You must select at least one sensor",
-            "no_sensors_with_areas": "None of the selected sensors have area assignments in Home Assistant",
             "no_actions": "You must define at least one action",
             "invalid_url": "Invalid URL format"
         },
         "abort": {
             "already_configured": "Jerkins AI is already configured",
-            "no_sensors_with_areas_available": "No sensors with area assignments are available. Assign areas to your sensors in Home Assistant first."
+            "no_sensors_available": "No sensors are available in your Home Assistant instance."
         }
     }
 }

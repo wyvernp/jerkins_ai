@@ -149,7 +149,7 @@ def get_entities_in_area(hass: HomeAssistant, area_id: str) -> List[str]:
             area_entities.append(entity_id)
     
     # Then get entities whose devices are in this area
-    device_registry = hass.helpers.device_registry.async_get(hass)
+    device_registry = hass.helpers.device_registry.async_get()
     for device_id, device in device_registry.devices.items():
         if device.area_id == area_id:
             # Find entities attached to this device
@@ -281,74 +281,38 @@ class JerkinsAIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not selected_sensors:
                 errors["base"] = "no_sensors"
             else:
-                # Only keep sensors that have valid area assignments
-                area_mappings = {}
-                valid_sensors = []
+                # Store the selected sensors
+                self._sensors = selected_sensors
+                self._data[CONF_SENSORS] = self._sensors
                 
-                for sensor_id in selected_sensors:
-                    area_id = get_entity_area(self.hass, sensor_id)
-                    if area_id:
-                        valid_sensors.append(sensor_id)
-                        area_mappings[sensor_id] = area_id
-                        _LOGGER.info("Selected sensor %s has area: %s", sensor_id, area_id)
-                    else:
-                        _LOGGER.warning("Selected sensor %s has no area assignment", sensor_id)
+                # Create default area mappings (use "default" area for all)
+                self._area_mappings = {sensor_id: "default" for sensor_id in self._sensors}
+                self._data[CONF_AREA_MAPPINGS] = self._area_mappings
                 
-                if not valid_sensors:
-                    # No sensors with areas were selected
-                    errors["base"] = "no_sensors_with_areas"
-                else:
-                    # Store only sensors with areas and their mappings
-                    self._sensors = valid_sensors
-                    self._area_mappings = area_mappings
-                    
-                    self._data[CONF_SENSORS] = self._sensors
-                    self._data[CONF_AREA_MAPPINGS] = self._area_mappings
-                    
-                    # Get unique areas for action mapping
-                    self._unique_areas = list(set(self._area_mappings.values()))
-                    self._current_area = self._unique_areas[0]
-                    
-                    # Skip directly to actions step
-                    return await self.async_step_actions()
+                # Set up for the actions step
+                self._unique_areas = ["default"]
+                self._current_area = "default"
+                
+                # Skip directly to actions step
+                return await self.async_step_actions()
         
-        # Get all sensors that have areas assigned
+        # Get all sensors without filtering by area
         sensor_options = []
-        sensors_without_areas = []
         states = self.hass.states.async_all()
-        
-        # First, log all available areas
-        try:
-            ar_registry = area_registry.async_get(self.hass)
-            _LOGGER.info("Available areas in Home Assistant: %s", 
-                        [f"{area.name} ({area_id})" for area_id, area in ar_registry.areas.items()])
-        except Exception as e:
-            _LOGGER.warning("Could not retrieve areas: %s", e)
         
         for state in states:
             # Include both sensors and binary sensors
             if state.domain == "sensor" or state.domain == "binary_sensor":
                 entity_id = state.entity_id
-                # Check if sensor has an area
-                area_id = get_entity_area(self.hass, entity_id)
-                if area_id:
-                    sensor_options.append({
-                        "value": entity_id,
-                        "label": f"{state.name} ({entity_id})"
-                    })
-                    _LOGGER.info("Found sensor with area: %s -> %s", entity_id, area_id)
-                else:
-                    sensors_without_areas.append(entity_id)
-        
-        # Log a warning for sensors without areas
-        if sensors_without_areas:
-            _LOGGER.warning("The following sensors have no area assignments: %s", sensors_without_areas)
+                sensor_options.append({
+                    "value": entity_id,
+                    "label": f"{state.name} ({entity_id})"
+                })
         
         if not sensor_options:
-            _LOGGER.error("No sensors with area assignments were found. Check that your sensors have areas assigned in Home Assistant.")
-            return self.async_abort(reason="no_sensors_with_areas_available")
+            return self.async_abort(reason="no_sensors_available")
         
-        _LOGGER.info("Found %d sensors with area assignments", len(sensor_options))
+        _LOGGER.info("Found %d sensors", len(sensor_options))
         
         return self.async_show_form(
             step_id=STEP_SENSORS,
@@ -364,7 +328,6 @@ class JerkinsAIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
             ),
             errors=errors,
-            description_placeholders={"note": "Only sensors with area assignments are shown."},
         )
 
     async def async_step_areas(self, user_input=None) -> FlowResult:

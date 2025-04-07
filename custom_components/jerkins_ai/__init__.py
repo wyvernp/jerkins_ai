@@ -230,7 +230,7 @@ class JerkinsAI:
         return True
     
     async def _collect_sensor_data(self):
-        """Collect data from all configured sensors and enrich with area information."""
+        """Collect data from all configured sensors."""
         sensor_data = []
         
         for sensor_entity_id in self.sensors:
@@ -240,18 +240,6 @@ class JerkinsAI:
                 if not state:
                     _LOGGER.warning("Sensor %s not found", sensor_entity_id)
                     continue
-                
-                # Get the area for this sensor
-                area_id = self.area_mappings.get(sensor_entity_id)
-                if not area_id:
-                    _LOGGER.warning("No area mapping for sensor %s", sensor_entity_id)
-                    continue
-                
-                # Get available actions for this area
-                available_actions = self.action_mappings.get(area_id, [])
-                
-                # Dynamically check if these actions are still valid
-                valid_actions = await self._validate_area_actions(area_id, available_actions)
                 
                 # Format the state value appropriately for binary sensors vs regular sensors
                 state_value = state.state
@@ -266,26 +254,15 @@ class JerkinsAI:
                     else:
                         state_value = False
                 
-                # Get area name for display
-                area_name = area_id
-                if area_id.startswith("custom."):
-                    area_name = area_id.split(".", 1)[1]
-                else:
-                    try:
-                        ar_registry = area_registry.async_get(self.hass)
-                        area_obj = ar_registry.async_get_area(area_id)
-                        if area_obj:
-                            area_name = area_obj.name
-                    except Exception:
-                        pass
+                # Get available actions
+                available_actions = self.action_mappings.get("default", [])
+                valid_actions = await self._validate_actions(available_actions)
                 
                 sensor_info = {
                     "entity_id": sensor_entity_id,
                     "name": state.name,
                     "state": state_value,
                     "attributes": state.attributes,
-                    "area_id": area_id,
-                    "area_name": area_name,
                     "type": sensor_type,
                     "available_actions": valid_actions
                 }
@@ -297,10 +274,9 @@ class JerkinsAI:
         
         return sensor_data
     
-    async def _validate_area_actions(self, area_id, configured_actions):
-        """Validate that configured actions for an area are still valid."""
+    async def _validate_actions(self, configured_actions):
+        """Validate that configured actions are still valid."""
         valid_actions = []
-        area_entities = await self._get_entities_for_area(area_id)
         
         for action in configured_actions:
             # Handle service calls (contains a dot)
@@ -312,66 +288,13 @@ class JerkinsAI:
                     _LOGGER.debug("Domain %s not in supported domains", domain)
                     continue
                 
-                # Check if any entities of this domain exist in the area
-                domain_entities = [e for e in area_entities if e.startswith(f"{domain}.")]
-                
-                if domain_entities or domain in ["script", "automation"]:
-                    valid_actions.append(action)
-                else:
-                    _LOGGER.debug("No %s entities found in area %s for action %s", 
-                                 domain, area_id, action)
+                # All service calls are considered valid
+                valid_actions.append(action)
             else:
                 # Custom actions are always considered valid
                 valid_actions.append(action)
         
         return valid_actions
-    
-    async def _get_entities_for_area(self, area_id):
-        """Get entities that belong to a specific area."""
-        area_entities = []
-        
-        # For standard HA areas, use the area registry
-        if not area_id.startswith("custom."):
-            try:
-                entity_registry = async_get(self.hass)
-                
-                # First, get entities directly assigned to this area
-                for entity_id, entry in entity_registry.entities.items():
-                    if entry.area_id == area_id:
-                        area_entities.append(entity_id)
-                
-                # Then get entities whose devices are in this area
-                device_registry = self.hass.helpers.device_registry.async_get(self.hass)
-                for device_id, device in device_registry.devices.items():
-                    if device.area_id == area_id:
-                        # Find entities attached to this device
-                        for entity_id, entry in entity_registry.entities.items():
-                            if entry.device_id == device_id and entity_id not in area_entities:
-                                area_entities.append(entity_id)
-            except Exception as e:
-                _LOGGER.warning("Error getting entities for area %s: %s", area_id, e)
-        else:
-            # For custom areas, look for entities that might be related based on name
-            area_name = area_id.split(".", 1)[1]
-            
-            # Look for entities that might be in this area based on entity_id or name
-            states = self.hass.states.async_all()
-            for state in states:
-                # Only include supported domains
-                if state.domain not in SUPPORTED_DOMAINS:
-                    continue
-                    
-                # Check if entity might be in this area
-                entity_name = state.name.lower() if state.name else ""
-                entity_id = state.entity_id.lower()
-                
-                # Match if area name appears in entity ID or friendly name
-                area_key = area_name.lower().replace("_", "")
-                if (area_key in entity_id or 
-                    area_name.lower().replace("_", " ") in entity_name):
-                    area_entities.append(state.entity_id)
-                
-        return area_entities
     
     async def _communicate_with_llm(self, sensor_data):
         """Send sensor data to the LLM and get decisions."""
@@ -416,41 +339,37 @@ class JerkinsAI:
             return
             
         try:
-            # The expected format is: {"area": "area_id", "action": "action_name", "parameters": {}}
-            area = llm_response.get("area")
+            # The expected format is: {"action": "action_name", "parameters": {}}
             action = llm_response.get("action")
             parameters = llm_response.get("parameters", {})
             
-            if not area or not action:
-                _LOGGER.warning("LLM response missing area or action: %s", llm_response)
+            if not action:
+                _LOGGER.warning("LLM response missing action: %s", llm_response)
                 return
                 
-            # Get current valid actions for this area
-            configured_actions = self.action_mappings.get(area, [])
-            valid_actions = await self._validate_area_actions(area, configured_actions)
+            # Get current valid actions
+            configured_actions = self.action_mappings.get("default", [])
+            valid_actions = await self._validate_actions(configured_actions)
             
-            # Validate the action is available for this area
+            # Validate the action is available
             if action not in valid_actions:
                 _LOGGER.warning(
-                    "LLM requested action '%s' not available in area '%s'. Available actions: %s",
-                    action, area, valid_actions
+                    "LLM requested action '%s' not available. Available actions: %s",
+                    action, valid_actions
                 )
                 return
                 
             # Execute the action
-            await self._execute_action(area, action, parameters)
+            await self._execute_action(action, parameters)
             
         except Exception as exc:
             _LOGGER.error("Error processing LLM response: %s", exc)
     
-    async def _execute_action(self, area, action, parameters):
+    async def _execute_action(self, action, parameters):
         """Execute an action in Home Assistant."""
         try:
-            # Get entities related to this area for context
-            area_entities = await self._get_entities_for_area(area)
-            
-            _LOGGER.info("Executing action '%s' in area '%s' with parameters: %s", 
-                         action, area, parameters)
+            _LOGGER.info("Executing action '%s' with parameters: %s", 
+                         action, parameters)
             
             # Check if action is a service call (contains a dot)
             if "." in action:
@@ -459,27 +378,15 @@ class JerkinsAI:
                 # Create service data with parameters
                 service_data = {**parameters}
                 
-                # Set target entity_id if not provided in parameters
-                target = {}
-                if "entity_id" in parameters:
-                    target["entity_id"] = parameters.pop("entity_id")
-                elif area_entities:
-                    # If entity_id not specified but we know entities in this area,
-                    # filter by the correct domain
-                    matching_entities = [e for e in area_entities if e.startswith(f"{domain}.")]
-                    if matching_entities:
-                        target["entity_id"] = matching_entities
-                
                 # Call the service
                 await self.hass.services.async_call(
                     domain,
                     service,
                     service_data=service_data,
-                    target=target,
                 )
                 
-                _LOGGER.info("Called service %s.%s with data %s and target %s", 
-                            domain, service, service_data, target)
+                _LOGGER.info("Called service %s.%s with data %s", 
+                            domain, service, service_data)
             else:
                 # Handle custom actions - could be implemented based on specific needs
                 _LOGGER.info("Custom action '%s' execution not yet implemented", action)
