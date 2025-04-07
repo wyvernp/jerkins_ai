@@ -235,48 +235,55 @@ class JerkinsAIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         
         if user_input is not None:
-            self._sensors = user_input.get(CONF_SENSORS, [])
-            if not self._sensors:
+            selected_sensors = user_input.get(CONF_SENSORS, [])
+            if not selected_sensors:
                 errors["base"] = "no_sensors"
             else:
-                # Store sensors and process area assignments automatically
-                self._data[CONF_SENSORS] = self._sensors
+                # Only keep sensors that have valid area assignments
+                area_mappings = {}
+                valid_sensors = []
                 
-                # Try to automatically determine areas for all sensors
-                auto_area_mappings = {}
-                for sensor_id in self._sensors:
+                for sensor_id in selected_sensors:
                     area_id = get_entity_area(self.hass, sensor_id)
                     if area_id:
-                        auto_area_mappings[sensor_id] = area_id
+                        valid_sensors.append(sensor_id)
+                        area_mappings[sensor_id] = area_id
                 
-                # If we found areas for all sensors, skip to actions
-                if len(auto_area_mappings) == len(self._sensors):
-                    self._area_mappings = auto_area_mappings
+                if not valid_sensors:
+                    # No sensors with areas were selected
+                    errors["base"] = "no_sensors_with_areas"
+                else:
+                    # Store only sensors with areas and their mappings
+                    self._sensors = valid_sensors
+                    self._area_mappings = area_mappings
+                    
+                    self._data[CONF_SENSORS] = self._sensors
                     self._data[CONF_AREA_MAPPINGS] = self._area_mappings
                     
                     # Get unique areas for action mapping
                     self._unique_areas = list(set(self._area_mappings.values()))
+                    self._current_area = self._unique_areas[0]
                     
-                    if self._unique_areas:
-                        self._current_area = self._unique_areas[0]
-                        return await self.async_step_actions()
-                
-                # Otherwise, start area assignment for sensors without areas
-                self._area_mappings = auto_area_mappings
-                
-                # Find the first sensor without an area
-                for sensor_id in self._sensors:
-                    if sensor_id not in self._area_mappings:
-                        self._current_sensor = sensor_id
-                        return await self.async_step_areas()
-                
-                # If we get here, proceed to actions
-                self._data[CONF_AREA_MAPPINGS] = self._area_mappings
-                self._unique_areas = list(set(self._area_mappings.values()))
-                self._current_area = self._unique_areas[0]
-                return await self.async_step_actions()
+                    # Skip directly to actions step
+                    return await self.async_step_actions()
         
-        sensor_options = get_sensor_entities(self.hass)
+        # Get all sensors that have areas assigned
+        sensor_options = []
+        states = self.hass.states.async_all()
+        
+        for state in states:
+            # Include both sensors and binary sensors
+            if state.domain == "sensor" or state.domain == "binary_sensor":
+                entity_id = state.entity_id
+                # Only include sensors that have areas
+                if get_entity_area(self.hass, entity_id):
+                    sensor_options.append({
+                        "value": entity_id,
+                        "label": f"{state.name} ({entity_id})"
+                    })
+        
+        if not sensor_options:
+            return self.async_abort(reason="no_sensors_with_areas_available")
         
         return self.async_show_form(
             step_id=STEP_SENSORS,
@@ -292,6 +299,7 @@ class JerkinsAIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
             ),
             errors=errors,
+            description_placeholders={"note": "Only sensors with area assignments are shown."},
         )
 
     async def async_step_areas(self, user_input=None) -> FlowResult:
