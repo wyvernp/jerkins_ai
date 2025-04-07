@@ -303,19 +303,63 @@ class JerkinsAI:
             return None
             
         try:
+            # Make sure the URL format is correct for Ollama
+            llm_url = self.llm_url
+            if not llm_url.startswith("http://") and not llm_url.startswith("https://"):
+                llm_url = f"http://{llm_url}"
+                
+            # Ensure URL ends with /api/generate for Ollama
+            if not llm_url.endswith("/api/generate"):
+                if llm_url.endswith("/"):
+                    llm_url = f"{llm_url}api/generate"
+                else:
+                    llm_url = f"{llm_url}/api/generate"
+            
+            _LOGGER.debug("Using LLM URL: %s", llm_url)
+            
+            # Format the payload for Ollama's API
+            prompt = (
+                "You are the house brain. Analyze the following sensor data:\n\n"
+                f"{sensor_data}\n\n"
+                "If you think an action should be taken based on this data, respond with a "
+                "JSON object with the format: {\"action\": \"action_name\", \"parameters\": {}}.\n"
+                "If no action is needed, respond with an empty JSON object: {}."
+            )
+            
             payload = {
-                "system_prompt": "You are the house brain. Analyze the sensor data from different areas and decide if any actions should be taken.",
-                "sensor_data": sensor_data,
-                "instructions": "For each area, decide if an action should be taken based on the sensor data. If yes, respond with a JSON object containing area and action. If no action is needed, respond with an empty object."
+                "model": "jerkins",  # Use default model, can be configured later
+                "prompt": prompt,
+                "stream": False,
+                "format": "json"
             }
             
+            _LOGGER.debug("Sending request to LLM: %s", payload)
+            
             async with async_timeout.timeout(30):
-                async with self.session.post(self.llm_url, json=payload) as response:
+                async with self.session.post(llm_url, json=payload) as response:
                     if response.status != 200:
-                        _LOGGER.error("LLM request failed with status %s", response.status)
+                        _LOGGER.error("LLM request failed with status %s: %s", 
+                                     response.status, await response.text())
                         return None
-                        
-                    return await response.json()
+                    
+                    # Parse Ollama response format
+                    response_data = await response.json()
+                    _LOGGER.debug("LLM response: %s", response_data)
+                    
+                    # Extract the actual response from Ollama's response structure
+                    # Ollama returns {"model": "...", "response": "...", ...}
+                    if "response" in response_data:
+                        try:
+                            import json
+                            # Try to parse the response as JSON
+                            return json.loads(response_data["response"])
+                        except json.JSONDecodeError:
+                            _LOGGER.error("Failed to parse LLM response as JSON: %s", 
+                                         response_data["response"])
+                            return None
+                    else:
+                        _LOGGER.error("Unexpected response format from LLM: %s", response_data)
+                        return None
                     
         except asyncio.TimeoutError:
             _LOGGER.error("Timeout communicating with LLM")
@@ -325,6 +369,8 @@ class JerkinsAI:
             return None
         except Exception as exc:
             _LOGGER.error("Unexpected error in LLM communication: %s", exc)
+            import traceback
+            _LOGGER.debug("Traceback: %s", traceback.format_exc())
             return None
     
     async def _process_llm_response(self, llm_response):
@@ -393,3 +439,4 @@ class JerkinsAI:
             
         except Exception as exc:
             _LOGGER.error("Error executing action: %s", exc)
+``` 

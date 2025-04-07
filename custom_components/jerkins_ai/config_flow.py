@@ -479,6 +479,18 @@ class JerkinsAIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not url:
                 errors[CONF_URL] = "invalid_url"
             else:
+                # Automatically fix common URL formatting issues
+                if not url.startswith("http://") and not url.startswith("https://"):
+                    url = f"http://{url}"
+                
+                # For Ollama, ensure we have the correct API endpoint
+                if "ollama" in self.hass.config.components or "ollama" in url.lower() or "11434" in url:
+                    if not url.endswith("/api/generate"):
+                        if url.endswith("/"):
+                            url = f"{url}api/generate"
+                        else:
+                            url = f"{url}/api/generate"
+                
                 # Store LLM URL and create entry
                 self._data[CONF_URL] = url
                 return self.async_create_entry(
@@ -493,5 +505,8 @@ class JerkinsAIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(CONF_URL): str,
                 }
             ),
+            description_placeholders={
+                "example_url": "http://192.168.1.159:11434/api/generate"
+            },
             errors=errors,
         )
