@@ -16,17 +16,17 @@
                     "sensors": "Sensors"
                 }
             },
-            "zones": {
-                "title": "Assign Zone",
-                "description": "Assign a zone to the sensor: {sensor}",
+            "areas": {
+                "title": "Assign Area",
+                "description": "Assign an area to the sensor: {sensor}",
                 "data": {
-                    "zone": "Zone",
-                    "custom_zone": "Custom Zone Name"
+                    "area": "Area",
+                    "custom_area": "Custom Area Name"
                 }
             },
             "actions": {
                 "title": "Configure Actions",
-                "description": "Select the actions that can be performed in zone: {zone}",
+                "description": "Select the actions that can be performed in area: {area}",
                 "data": {
                     "actions": "Available Actions",
                     "custom_actions": "Custom Actions (comma-separated)"
@@ -42,7 +42,7 @@
         },
         "error": {
             "no_sensors": "You must select at least one sensor",
-            "no_zone": "You must assign a zone",
+            "no_area": "You must assign an area",
             "no_actions": "You must define at least one action",
             "invalid_url": "Invalid URL format"
         },

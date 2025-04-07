@@ -7,7 +7,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers import selector
+from homeassistant.helpers import selector, area_registry
 from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
 from homeassistant.const import (
     CONF_NAME,
@@ -18,13 +18,13 @@ from .const import (
     DOMAIN,
     DEFAULT_NAME,
     CONF_SENSORS,
-    CONF_ZONE_MAPPINGS,
+    CONF_AREA_MAPPINGS,
     CONF_ACTION_MAPPINGS,
     CONF_POLLING_INTERVAL,
     DEFAULT_POLLING_INTERVAL,
     STEP_USER,
     STEP_SENSORS,
-    STEP_ZONES,
+    STEP_AREAS,
     STEP_ACTIONS,
     STEP_LLM,
     SUPPORTED_DOMAINS,
@@ -53,110 +53,97 @@ def get_sensor_entities(hass: HomeAssistant) -> List[dict]:
     return sensor_options
 
 
-def get_zone_entities(hass: HomeAssistant) -> List[dict]:
-    """Get all zone entities."""
-    states = hass.states.async_all()
-    zone_options = []
+def get_area_list(hass: HomeAssistant) -> List[dict]:
+    """Get all areas in Home Assistant."""
+    ar_registry = area_registry.async_get(hass)
+    area_options = []
     
-    for state in states:
-        if state.domain == "zone":
-            zone_options.append({
-                "value": state.entity_id,
-                "label": f"{state.name} ({state.entity_id})"
-            })
+    for area_id, area in ar_registry.areas.items():
+        area_options.append({
+            "value": area_id,
+            "label": area.name
+        })
     
-    # Add options for standard rooms if no zones are defined
-    if not zone_options:
-        for room in ["living_room", "kitchen", "bedroom", "bathroom", "office"]:
-            zone_options.append({
-                "value": f"room.{room}",
-                "label": f"{room.replace('_', ' ').title()}"
-            })
-    
-    # Add a custom zone option
-    zone_options.append({
+    # Add a custom area option
+    area_options.append({
         "value": "custom",
-        "label": "Custom Zone (enter name)"
+        "label": "Custom Area (enter name)"
     })
     
-    return zone_options
+    return area_options
 
 
-def get_area_entities(hass: HomeAssistant) -> Dict[str, List[str]]:
-    """Get all entities grouped by area/room."""
-    area_entities = {}
-    
-    # Get all registry entries
+def get_entity_area(hass: HomeAssistant, entity_id: str) -> Optional[str]:
+    """Get the area ID for an entity."""
     entity_registry = async_get_entity_registry(hass)
+    area_reg = area_registry.async_get(hass)
     
-    # Get areas registry
     try:
-        area_registry = hass.helpers.area_registry.async_get(hass)
+        entity_entry = entity_registry.async_get(entity_id)
+        if entity_entry and entity_entry.area_id:
+            # Entity has a direct area assignment
+            return entity_entry.area_id
         
-        # Group entities by area
-        for entity_id, entry in entity_registry.entities.items():
-            if entry.area_id and entry.area_id in area_registry.areas:
-                area_name = area_registry.areas[entry.area_id].name
-                if area_name not in area_entities:
-                    area_entities[area_name] = []
-                area_entities[area_name].append(entity_id)
-                
+        # If entity doesn't have direct area assignment, check if its device has an area
+        if entity_entry and entity_entry.device_id:
+            device_registry = hass.helpers.device_registry.async_get(hass)
+            device = device_registry.async_get(entity_entry.device_id)
+            if device and device.area_id:
+                return device.area_id
     except Exception as e:
-        _LOGGER.warning("Error accessing area registry: %s", e)
+        _LOGGER.warning("Error getting area for entity %s: %s", entity_id, e)
+    
+    return None
+
+
+def get_entities_in_area(hass: HomeAssistant, area_id: str) -> List[str]:
+    """Get all entities in a specific area."""
+    entity_registry = async_get_entity_registry(hass)
+    area_entities = []
+    
+    # First, get entities directly assigned to this area
+    for entity_id, entry in entity_registry.entities.items():
+        if entry.area_id == area_id:
+            area_entities.append(entity_id)
+    
+    # Then get entities whose devices are in this area
+    device_registry = hass.helpers.device_registry.async_get(hass)
+    for device_id, device in device_registry.devices.items():
+        if device.area_id == area_id:
+            # Find entities attached to this device
+            for entity_id, entry in entity_registry.entities.items():
+                if entry.device_id == device_id and entity_id not in area_entities:
+                    area_entities.append(entity_id)
     
     return area_entities
 
 
-def get_services_for_zone(hass: HomeAssistant, zone_id: str) -> List[dict]:
-    """Get all available services for entities in a zone."""
+def get_services_for_area(hass: HomeAssistant, area_id: str) -> List[dict]:
+    """Get all available services for entities in an area."""
     service_options = []
-    zone_entities = []
+    area_entities = []
     
-    # First check if this is a real zone entity or a custom zone
-    if zone_id.startswith("zone."):
-        # Real zone - find entities in this zone
-        try:
-            # This is a simplified approach - in a real implementation, you would
-            # use the zone's GPS coordinates and compare with device_tracker entities
-            pass
-        except Exception:
-            _LOGGER.warning("Error finding entities in zone %s", zone_id)
-    
-    # Check if this is a room
-    elif zone_id.startswith("room."):
-        room_name = zone_id.split(".", 1)[1].replace("_", " ").title()
-        
-        # Try to find entities in this room by area name
-        area_entities = get_area_entities(hass)
-        for area_name, entities in area_entities.items():
-            if room_name.lower() in area_name.lower():
-                zone_entities.extend(entities)
-    
-    # If we couldn't find entities specifically for this zone,
-    # look for entities that might have the zone name in their entity_id or name
-    if not zone_entities:
-        zone_name = zone_id.split(".", 1)[1] if "." in zone_id else zone_id
-        
-        states = hass.states.async_all()
-        for state in states:
-            # Only include supported domains
-            if state.domain not in SUPPORTED_DOMAINS:
-                continue
-                
-            # Check if entity might be in this zone
-            entity_name = state.name.lower() if state.name else ""
-            entity_id = state.entity_id.lower()
-            
-            # Match if zone name appears in entity ID or friendly name
-            if (zone_name.lower().replace("_", "") in entity_id or 
-                zone_name.lower().replace("_", " ") in entity_name):
-                zone_entities.append(state.entity_id)
+    # Get all entities in this area
+    if area_id == "custom":
+        # For custom areas, we can't get entities (yet)
+        pass
+    else:
+        area_entities = get_entities_in_area(hass, area_id)
     
     # Generate service options based on discovered entities
     service_map = {}
     
-    for entity_id in zone_entities:
+    for entity_id in area_entities:
+        # Skip if we can't get the entity state
+        state = hass.states.get(entity_id)
+        if not state:
+            continue
+            
         domain = entity_id.split(".", 1)[0]
+        
+        # Only include supported domains
+        if domain not in SUPPORTED_DOMAINS:
+            continue
         
         # Standard services based on domain
         if domain in SERVICE_CATEGORY_TOGGLE:
@@ -187,7 +174,7 @@ def get_services_for_zone(hass: HomeAssistant, zone_id: str) -> List[dict]:
                     service_name = f"{service.replace('_', ' ').title().replace('Media', '')}"
                     service_map[service_id] = service_name
     
-    # If no entities were found, add some default services that might be useful
+    # If no entities were found or this is a custom area, add some default services
     if not service_map:
         default_services = {
             "light.turn_on": "Turn On Lights",
@@ -222,10 +209,10 @@ class JerkinsAIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialize the config flow."""
         self._data = {}
         self._sensors = []
-        self._zone_mappings = {}
+        self._area_mappings = {}
         self._action_mappings = {}
         self._current_sensor = None
-        self._current_zone = None
+        self._current_area = None
 
     async def async_step_user(self, user_input=None) -> FlowResult:
         """Handle the initial step."""
@@ -252,10 +239,42 @@ class JerkinsAIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not self._sensors:
                 errors["base"] = "no_sensors"
             else:
-                # Store sensors and move to zone assignment
+                # Store sensors and process area assignments automatically
                 self._data[CONF_SENSORS] = self._sensors
-                self._current_sensor = self._sensors[0]
-                return await self.async_step_zones()
+                
+                # Try to automatically determine areas for all sensors
+                auto_area_mappings = {}
+                for sensor_id in self._sensors:
+                    area_id = get_entity_area(self.hass, sensor_id)
+                    if area_id:
+                        auto_area_mappings[sensor_id] = area_id
+                
+                # If we found areas for all sensors, skip to actions
+                if len(auto_area_mappings) == len(self._sensors):
+                    self._area_mappings = auto_area_mappings
+                    self._data[CONF_AREA_MAPPINGS] = self._area_mappings
+                    
+                    # Get unique areas for action mapping
+                    self._unique_areas = list(set(self._area_mappings.values()))
+                    
+                    if self._unique_areas:
+                        self._current_area = self._unique_areas[0]
+                        return await self.async_step_actions()
+                
+                # Otherwise, start area assignment for sensors without areas
+                self._area_mappings = auto_area_mappings
+                
+                # Find the first sensor without an area
+                for sensor_id in self._sensors:
+                    if sensor_id not in self._area_mappings:
+                        self._current_sensor = sensor_id
+                        return await self.async_step_areas()
+                
+                # If we get here, proceed to actions
+                self._data[CONF_AREA_MAPPINGS] = self._area_mappings
+                self._unique_areas = list(set(self._area_mappings.values()))
+                self._current_area = self._unique_areas[0]
+                return await self.async_step_actions()
         
         sensor_options = get_sensor_entities(self.hass)
         
@@ -275,56 +294,60 @@ class JerkinsAIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_zones(self, user_input=None) -> FlowResult:
-        """Handle the zone assignment step."""
+    async def async_step_areas(self, user_input=None) -> FlowResult:
+        """Handle the area assignment step."""
         errors = {}
         
         if user_input is not None:
-            zone = user_input.get("zone")
-            custom_zone = user_input.get("custom_zone")
+            area = user_input.get("area")
+            custom_area = user_input.get("custom_area")
             
-            # Handle custom zone
-            if zone == "custom" and custom_zone:
-                zone = custom_zone
+            # Handle custom area
+            if area == "custom" and custom_area:
+                area = f"custom.{custom_area}"
             
-            if not zone:
-                errors["base"] = "no_zone"
+            if not area:
+                errors["base"] = "no_area"
             else:
-                # Store zone mapping for current sensor
-                self._zone_mappings[self._current_sensor] = zone
+                # Store area mapping for current sensor
+                self._area_mappings[self._current_sensor] = area
                 
-                # Move to next sensor or to actions step
-                sensor_index = self._sensors.index(self._current_sensor)
-                if sensor_index < len(self._sensors) - 1:
-                    self._current_sensor = self._sensors[sensor_index + 1]
-                    return await self.async_step_zones()
+                # Find the next sensor without an area
+                next_sensor = None
+                for sensor_id in self._sensors:
+                    if sensor_id not in self._area_mappings:
+                        next_sensor = sensor_id
+                        break
+                
+                if next_sensor:
+                    self._current_sensor = next_sensor
+                    return await self.async_step_areas()
                 else:
-                    # Store zone mappings and move to actions
-                    self._data[CONF_ZONE_MAPPINGS] = self._zone_mappings
-                    # Get unique zones for action mapping
-                    self._unique_zones = list(set(self._zone_mappings.values()))
-                    self._current_zone = self._unique_zones[0]
+                    # All sensors have areas, move to actions
+                    self._data[CONF_AREA_MAPPINGS] = self._area_mappings
+                    self._unique_areas = list(set(self._area_mappings.values()))
+                    self._current_area = self._unique_areas[0]
                     return await self.async_step_actions()
         
-        zone_options = get_zone_entities(self.hass)
+        area_options = get_area_list(self.hass)
         description_placeholders = {"sensor": self._current_sensor}
         
         schema = vol.Schema({
-            vol.Required("zone"): selector.SelectSelector(
+            vol.Required("area"): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=zone_options,
+                    options=area_options,
                     mode=selector.SelectSelectorMode.DROPDOWN
                 )
             ),
         })
         
-        # Add custom zone field that is conditionally shown
+        # Add custom area field that is conditionally shown
         schema = schema.extend({
-            vol.Optional("custom_zone"): str,
+            vol.Optional("custom_area"): str,
         })
         
         return self.async_show_form(
-            step_id=STEP_ZONES,
+            step_id=STEP_AREAS,
             data_schema=schema,
             description_placeholders=description_placeholders,
             errors=errors,
@@ -350,22 +373,36 @@ class JerkinsAIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not actions:
                 errors["base"] = "no_actions"
             else:
-                # Store actions for current zone
-                self._action_mappings[self._current_zone] = actions
+                # Store actions for current area
+                self._action_mappings[self._current_area] = actions
                 
-                # Move to next zone or to LLM step
-                zone_index = self._unique_zones.index(self._current_zone)
-                if zone_index < len(self._unique_zones) - 1:
-                    self._current_zone = self._unique_zones[zone_index + 1]
+                # Move to next area or to LLM step
+                area_index = self._unique_areas.index(self._current_area)
+                if area_index < len(self._unique_areas) - 1:
+                    self._current_area = self._unique_areas[area_index + 1]
                     return await self.async_step_actions()
                 else:
                     # Store action mappings and move to LLM configuration
                     self._data[CONF_ACTION_MAPPINGS] = self._action_mappings
                     return await self.async_step_llm()
         
-        # Dynamically discover services for this zone
-        service_options = get_services_for_zone(self.hass, self._current_zone)
-        description_placeholders = {"zone": self._current_zone}
+        # Dynamically discover services for this area
+        service_options = get_services_for_area(self.hass, self._current_area)
+        
+        # Get area name for display
+        area_name = self._current_area
+        if self._current_area.startswith("custom."):
+            area_name = self._current_area.split(".", 1)[1]
+        else:
+            try:
+                ar_registry = area_registry.async_get(self.hass)
+                area_obj = ar_registry.async_get_area(self._current_area)
+                if area_obj:
+                    area_name = area_obj.name
+            except Exception:
+                pass
+                
+        description_placeholders = {"area": area_name}
         
         schema = vol.Schema({
             vol.Required("actions"): selector.SelectSelector(

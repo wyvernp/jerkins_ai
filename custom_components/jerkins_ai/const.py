@@ -4,7 +4,7 @@ DOMAIN = "jerkins_ai"
 
 # Configuration constants
 CONF_SENSORS = "sensors"
-CONF_ZONE_MAPPINGS = "zone_mappings"
+CONF_AREA_MAPPINGS = "area_mappings"
 CONF_ACTION_MAPPINGS = "action_mappings"
 CONF_POLLING_INTERVAL = "polling_interval"
 DEFAULT_POLLING_INTERVAL = 60  # in seconds
@@ -15,7 +15,7 @@ DEFAULT_NAME = "Jerkins AI"
 # Config flow step IDs
 STEP_USER = "user"
 STEP_SENSORS = "sensors"
-STEP_ZONES = "zones"
+STEP_AREAS = "areas"
 STEP_ACTIONS = "actions"
 STEP_LLM = "llm"
 

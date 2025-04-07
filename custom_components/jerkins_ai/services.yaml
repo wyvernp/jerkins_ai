@@ -8,8 +8,8 @@ force_update:
       selector:
         text:
 
-update_zone_mappings:
-  description: Update zone mappings for sensors.
+update_area_mappings:
+  description: Update area mappings for sensors.
   fields:
     entry_id:
       description: Config entry ID.
@@ -24,15 +24,15 @@ update_zone_mappings:
       selector:
         entity:
           domain: sensor
-    zone_id:
-      description: The zone ID to assign to the sensor.
-      example: "zone.living_room or custom_zone_name"
+    area_id:
+      description: The area ID to assign to the sensor.
+      example: "living_room or custom_area_name"
       required: true
       selector:
         text:
 
 update_action_mappings:
-  description: Update available actions for a zone.
+  description: Update available actions for an area.
   fields:
     entry_id:
       description: Config entry ID.
@@ -40,14 +40,14 @@ update_action_mappings:
       required: true
       selector:
         text:
-    zone_id:
-      description: The zone ID to update actions for.
-      example: "zone.living_room or custom_zone_name"
+    area_id:
+      description: The area ID to update actions for.
+      example: "living_room or custom_area_name"
       required: true
       selector:
         text:
     actions:
-      description: Comma-separated list of available actions for the zone.
+      description: Comma-separated list of available actions for the area.
       example: "light.turn_on,light.turn_off,custom_action"
       required: true
       selector:
