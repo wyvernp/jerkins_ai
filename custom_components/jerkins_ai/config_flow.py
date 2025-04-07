@@ -37,54 +37,46 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-def get_sensor_entities(hass: HomeAssistant) -> List[selector.SelectSelectorOption]:
+def get_sensor_entities(hass: HomeAssistant) -> List[dict]:
     """Get all sensor entities."""
     states = hass.states.async_all()
     sensor_options = []
     
     for state in states:
         if state.domain == "sensor":
-            sensor_options.append(
-                selector.SelectSelectorOption(
-                    value=state.entity_id,
-                    label=f"{state.name} ({state.entity_id})"
-                )
-            )
+            sensor_options.append({
+                "value": state.entity_id,
+                "label": f"{state.name} ({state.entity_id})"
+            })
     
     return sensor_options
 
 
-def get_zone_entities(hass: HomeAssistant) -> List[selector.SelectSelectorOption]:
+def get_zone_entities(hass: HomeAssistant) -> List[dict]:
     """Get all zone entities."""
     states = hass.states.async_all()
     zone_options = []
     
     for state in states:
         if state.domain == "zone":
-            zone_options.append(
-                selector.SelectSelectorOption(
-                    value=state.entity_id,
-                    label=f"{state.name} ({state.entity_id})"
-                )
-            )
+            zone_options.append({
+                "value": state.entity_id,
+                "label": f"{state.name} ({state.entity_id})"
+            })
     
     # Add options for standard rooms if no zones are defined
     if not zone_options:
         for room in ["living_room", "kitchen", "bedroom", "bathroom", "office"]:
-            zone_options.append(
-                selector.SelectSelectorOption(
-                    value=f"room.{room}",
-                    label=f"{room.replace('_', ' ').title()}"
-                )
-            )
+            zone_options.append({
+                "value": f"room.{room}",
+                "label": f"{room.replace('_', ' ').title()}"
+            })
     
     # Add a custom zone option
-    zone_options.append(
-        selector.SelectSelectorOption(
-            value="custom",
-            label="Custom Zone (enter name)"
-        )
-    )
+    zone_options.append({
+        "value": "custom",
+        "label": "Custom Zone (enter name)"
+    })
     
     return zone_options
 
@@ -114,7 +106,7 @@ def get_area_entities(hass: HomeAssistant) -> Dict[str, List[str]]:
     return area_entities
 
 
-def get_services_for_zone(hass: HomeAssistant, zone_id: str) -> List[selector.SelectSelectorOption]:
+def get_services_for_zone(hass: HomeAssistant, zone_id: str) -> List[dict]:
     """Get all available services for entities in a zone."""
     service_options = []
     zone_entities = []
@@ -206,20 +198,16 @@ def get_services_for_zone(hass: HomeAssistant, zone_id: str) -> List[selector.Se
     
     # Convert the map to selector options
     for service_id, service_name in service_map.items():
-        service_options.append(
-            selector.SelectSelectorOption(
-                value=service_id,
-                label=f"{service_name} ({service_id})"
-            )
-        )
+        service_options.append({
+            "value": service_id,
+            "label": f"{service_name} ({service_id})"
+        })
     
     # Add a custom action option
-    service_options.append(
-        selector.SelectSelectorOption(
-            value="custom",
-            label="Custom Action (enter name)"
-        )
-    )
+    service_options.append({
+        "value": "custom",
+        "label": "Custom Action (enter name)"
+    })
     
     return service_options
 
