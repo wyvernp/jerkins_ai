@@ -75,25 +75,67 @@ def get_area_list(hass: HomeAssistant) -> List[dict]:
 
 def get_entity_area(hass: HomeAssistant, entity_id: str) -> Optional[str]:
     """Get the area ID for an entity."""
-    entity_registry = async_get_entity_registry(hass)
-    area_reg = area_registry.async_get(hass)
-    
     try:
+        # Method 1: Check entity registry for direct area assignment
+        entity_registry = async_get_entity_registry(hass)
         entity_entry = entity_registry.async_get(entity_id)
+        
         if entity_entry and entity_entry.area_id:
-            # Entity has a direct area assignment
+            _LOGGER.debug("Entity %s has direct area assignment: %s", entity_id, entity_entry.area_id)
             return entity_entry.area_id
         
-        # If entity doesn't have direct area assignment, check if its device has an area
+        # Method 2: Check if entity's device has an area assigned
         if entity_entry and entity_entry.device_id:
             device_registry = hass.helpers.device_registry.async_get(hass)
             device = device_registry.async_get(entity_entry.device_id)
             if device and device.area_id:
+                _LOGGER.debug("Entity %s has area via device %s: %s", 
+                             entity_id, device.id, device.area_id)
                 return device.area_id
+        
+        # Method 3: Check if entity name contains an area name
+        # This is a fallback for entities not properly registered
+        area_reg = area_registry.async_get(hass)
+        state = hass.states.get(entity_id)
+        
+        if state and state.name:
+            # Check if any area name is in the entity name or entity_id
+            entity_name = state.name.lower()
+            entity_id_lower = entity_id.lower()
+            
+            for area_id, area in area_reg.areas.items():
+                area_name = area.name.lower()
+                # Check for area name match in entity name or ID
+                if (area_name in entity_name or 
+                    area_name.replace(' ', '_') in entity_id_lower or
+                    area_name.replace(' ', '') in entity_id_lower):
+                    _LOGGER.debug("Entity %s matched to area %s by name", entity_id, area.name)
+                    return area_id
+        
+        # Method 4: For manually created entities without area 
+        # assignments directly in their config, try to infer from attributes
+        if state and state.attributes:
+            if 'device_class' in state.attributes and 'room' in entity_id_lower:
+                # Extract room name from entity_id for sensor.bedroom_temperature
+                parts = entity_id_lower.split('_')
+                if len(parts) > 1:
+                    potential_room = parts[0].split('.')[1]  # Remove domain
+                    # Check if this room name corresponds to an area
+                    for area_id, area in area_reg.areas.items():
+                        if potential_room in area.name.lower():
+                            _LOGGER.debug("Entity %s matched to area %s by room inference", 
+                                         entity_id, area.name)
+                            return area_id
+        
+        # Log that we couldn't find an area
+        _LOGGER.debug("Could not determine area for entity %s", entity_id)
+        return None
+        
     except Exception as e:
         _LOGGER.warning("Error getting area for entity %s: %s", entity_id, e)
-    
-    return None
+        import traceback
+        _LOGGER.debug("Traceback: %s", traceback.format_exc())
+        return None
 
 
 def get_entities_in_area(hass: HomeAssistant, area_id: str) -> List[str]:
@@ -248,6 +290,9 @@ class JerkinsAIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     if area_id:
                         valid_sensors.append(sensor_id)
                         area_mappings[sensor_id] = area_id
+                        _LOGGER.info("Selected sensor %s has area: %s", sensor_id, area_id)
+                    else:
+                        _LOGGER.warning("Selected sensor %s has no area assignment", sensor_id)
                 
                 if not valid_sensors:
                     # No sensors with areas were selected
@@ -269,21 +314,41 @@ class JerkinsAIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         
         # Get all sensors that have areas assigned
         sensor_options = []
+        sensors_without_areas = []
         states = self.hass.states.async_all()
+        
+        # First, log all available areas
+        try:
+            ar_registry = area_registry.async_get(self.hass)
+            _LOGGER.info("Available areas in Home Assistant: %s", 
+                        [f"{area.name} ({area_id})" for area_id, area in ar_registry.areas.items()])
+        except Exception as e:
+            _LOGGER.warning("Could not retrieve areas: %s", e)
         
         for state in states:
             # Include both sensors and binary sensors
             if state.domain == "sensor" or state.domain == "binary_sensor":
                 entity_id = state.entity_id
-                # Only include sensors that have areas
-                if get_entity_area(self.hass, entity_id):
+                # Check if sensor has an area
+                area_id = get_entity_area(self.hass, entity_id)
+                if area_id:
                     sensor_options.append({
                         "value": entity_id,
                         "label": f"{state.name} ({entity_id})"
                     })
+                    _LOGGER.info("Found sensor with area: %s -> %s", entity_id, area_id)
+                else:
+                    sensors_without_areas.append(entity_id)
+        
+        # Log a warning for sensors without areas
+        if sensors_without_areas:
+            _LOGGER.warning("The following sensors have no area assignments: %s", sensors_without_areas)
         
         if not sensor_options:
+            _LOGGER.error("No sensors with area assignments were found. Check that your sensors have areas assigned in Home Assistant.")
             return self.async_abort(reason="no_sensors_with_areas_available")
+        
+        _LOGGER.info("Found %d sensors with area assignments", len(sensor_options))
         
         return self.async_show_form(
             step_id=STEP_SENSORS,
