@@ -330,7 +330,14 @@ class JerkinsAIConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     return await self.async_step_actions()
         
         area_options = get_area_list(self.hass)
-        description_placeholders = {"sensor": self._current_sensor}
+        
+        # Get the friendly name of the current sensor for the UI
+        sensor_state = self.hass.states.get(self._current_sensor)
+        sensor_name = self._current_sensor
+        if sensor_state and sensor_state.name:
+            sensor_name = f"{sensor_state.name} ({self._current_sensor})"
+            
+        description_placeholders = {"sensor": sensor_name}
         
         schema = vol.Schema({
             vol.Required("area"): selector.SelectSelector(

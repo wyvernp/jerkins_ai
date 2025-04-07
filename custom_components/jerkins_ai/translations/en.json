@@ -18,7 +18,7 @@
             },
             "areas": {
                 "title": "Assign Area",
-                "description": "Assign an area to the sensor: {sensor}",
+                "description": "This sensor needs an area assignment: {sensor}",
                 "data": {
                     "area": "Area",
                     "custom_area": "Custom Area Name"
